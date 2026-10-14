@@ -1,0 +1,23 @@
+{
+  "translator": {
+    "translator": "custom_openai",
+    "target_lang": "CHS"
+  },
+  "detector": {
+    "detector": "default",
+    "detection_size": 1536
+  },
+  "ocr": {
+    "ocr": "48px"
+  },
+  "inpainter": {
+    "inpainter": "lama_mpe",
+    "inpainting_size": 1536
+  },
+  "render": {
+    "direction": "auto"
+  },
+  "upscale": {
+    "upscale_ratio": null
+  }
+}
