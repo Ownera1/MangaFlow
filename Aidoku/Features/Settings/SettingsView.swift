@@ -308,6 +308,8 @@ extension SettingsView {
             TapZonesSelectView()
         } else if key == "Reader.upscalingModels" {
             UpscaleModelListView()
+        } else if key == "Translation.token" {
+            TranslationTokenView()
         } else if key == "Dictionary.dictionaries" {
             if #available(iOS 18.0, *) {
                 DictionaryListView()

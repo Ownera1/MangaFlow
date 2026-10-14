@@ -6,6 +6,7 @@
 //
 
 import AidokuRunner
+import Nuke
 import UIKit
 import VisionKit
 
@@ -43,6 +44,10 @@ class ReaderPagedViewController: BaseObservingViewController {
     private var manuallyIsolatedPages: Set<Int> = []
     private lazy var pagesToPreload = UserDefaults.standard.integer(forKey: "Reader.pagesToPreload")
     private let pagePrefetcher = ReaderPagePrefetcher()
+    private let translationPrefetcher = ImagePrefetcher(pipeline: .shared, destination: .memoryCache)
+    private var translationPrefetchTask: Task<Void, Never>?
+    private var translationPrefetchRequests: [ImageRequest] = []
+    private var translationGeneration = 0
     private var nextChapterPreloadTask: Task<Void, Never>?
 
     // Split pages tracking
@@ -107,6 +112,7 @@ class ReaderPagedViewController: BaseObservingViewController {
             LogManager.logger.warn("Received memory warning")
             Self.clearSplitPageCache()
             self?.pagePrefetcher.reset()
+            self?.cancelTranslationPrefetch()
             guard
                 let self,
                 let viewController = pageViewController.viewControllers?.first,
@@ -994,12 +1000,17 @@ extension ReaderPagedViewController: UIPageViewControllerDelegate {
         guard
             completed,
             let viewController = pageViewController.viewControllers?.first,
-            let currentIndex = getIndex(of: viewController, pos: .first),
-            pagesToPreload > 0
+            let currentIndex = getIndex(of: viewController, pos: .first)
         else {
             return
         }
         let page = currentIndex + (previousChapter != nil ? -1 : 0)
+        if page >= 1 && page <= displayPageCount {
+            scheduleTranslationPrefetch(from: page)
+        } else {
+            cancelTranslationPrefetch()
+        }
+        guard pagesToPreload > 0 else { return }
         switch page {
             case -1: // previous chapter last page
                 pendingSpreadRebuild = false
@@ -1458,5 +1469,82 @@ extension ReaderPagedViewController {
 
     private func saveSplitPosition(for key: String, page: Int, offset: Int) {
         Self.splitPosition[key] = (page, offset)
+    }
+}
+
+// MARK: - Translation prefetch
+extension ReaderPagedViewController {
+    /// Warm the next two pages by display index. CBZ entries go through the shared
+    /// temporary page store, whose file URL is stable for a given archive entry.
+    private func scheduleTranslationPrefetch(from displayPage: Int) {
+        translationGeneration += 1
+        let generation = translationGeneration
+        translationPrefetchTask?.cancel()
+        guard UserDefaults.standard.bool(forKey: "Reader.translatePages") else {
+            translationPrefetcher.stopPrefetching()
+            translationPrefetchRequests = []
+            return
+        }
+        // Indexes increase toward the next page in every reading mode. RTL only
+        // swaps the data source's before/after, same direction as loadPages(in:).
+        let upcoming = [displayPage + 1, displayPage + 2]
+        translationPrefetchTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var requests: [ImageRequest] = []
+            for display in upcoming {
+                if Task.isCancelled || generation != self.translationGeneration { return }
+                guard display >= 1, display <= self.displayPageCount else { continue }
+                let actual = self.actualPageIndex(from: display)
+                guard actual >= 1, actual <= self.viewModel.pages.count else { continue }
+                let page = self.viewModel.pages[actual - 1]
+                if let request = await self.translationRequest(for: page) {
+                    requests.append(request)
+                }
+            }
+            guard !Task.isCancelled, generation == self.translationGeneration else { return }
+            self.replaceTranslationPrefetch(with: requests)
+        }
+    }
+
+    private func translationRequest(for page: Page) async -> ImageRequest? {
+        if page.image != nil || page.base64 != nil || page.text != nil {
+            return nil
+        }
+        let sourceKey = viewModel.source?.key ?? viewModel.manga.sourceKey
+        if let zipURL = page.zipURL, let archiveURL = URL(string: zipURL), let path = page.imageURL {
+            guard !path.lowercased().hasSuffix(".txt"), let store = viewModel.temporaryPageStore else { return nil }
+            guard let fileURL = await store.storeArchiveEntry(from: archiveURL, path: path) else { return nil }
+            return await ReaderPageView.imageRequest(url: fileURL, context: nil, sourceKey: sourceKey)
+        }
+        guard let imageURL = page.imageURL, let url = URL(string: imageURL) else { return nil }
+        return await ReaderPageView.imageRequest(url: url, context: page.context, sourceKey: sourceKey)
+    }
+
+    private func replaceTranslationPrefetch(with requests: [ImageRequest]) {
+        let keys = Set(requests.map(Self.translationRequestKey))
+        let previous = translationPrefetchRequests
+        let stale = previous.filter { !keys.contains(Self.translationRequestKey($0)) }
+        if !stale.isEmpty {
+            translationPrefetcher.stopPrefetching(with: stale)
+        }
+        let started = Set(previous.map(Self.translationRequestKey))
+        let fresh = requests.filter { !started.contains(Self.translationRequestKey($0)) }
+        if !fresh.isEmpty {
+            translationPrefetcher.startPrefetching(with: fresh)
+        }
+        translationPrefetchRequests = requests
+    }
+
+    private func cancelTranslationPrefetch() {
+        translationGeneration += 1
+        translationPrefetchTask?.cancel()
+        translationPrefetchTask = nil
+        translationPrefetcher.stopPrefetching()
+        translationPrefetchRequests = []
+    }
+
+    nonisolated private static func translationRequestKey(_ request: ImageRequest) -> String {
+        let processors = request.processors.map(\.identifier).joined(separator: "|")
+        return "\(request.url?.absoluteString ?? "")|\(processors)"
     }
 }

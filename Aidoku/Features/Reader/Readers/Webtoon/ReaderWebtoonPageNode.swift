@@ -33,7 +33,7 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
 
     private var pageLoadTask: Task<Void, Never>?
     private var imageTask: ImageTask?
-    private var imageProcessingTask: Task<UIImage?, Never>?
+    private var imageProcessingTask: Task<(image: UIImage, cache: Bool)?, Never>?
 
     private var shouldShowLiveTextButton = false
     private var liveTextAnalysisTask: Task<Void, Never>?
@@ -336,6 +336,13 @@ extension ReaderWebtoonPageNode {
     }
 
     private func loadImage(url: URL, context: PageContext?) async {
+        let request = await pageImageRequest(url: url, context: context)
+        // Store current image request for reload functionality
+        self.currentImageRequest = request
+        await loadImage(request: request)
+    }
+
+    private func pageImageRequest(url: URL, context: PageContext?) async -> ImageRequest {
         let urlRequest = if !url.isFileURL, let source {
             await source.getModifiedImageRequest(url: url, context: context)
         } else {
@@ -360,21 +367,23 @@ extension ReaderWebtoonPageNode {
         if shouldCropBorders {
             processors.append(CropBordersProcessor())
         }
+        if UserDefaults.standard.bool(forKey: "Reader.translatePages") {
+            processors.append(TranslateProcessor())
+        }
         if shouldDownsample {
             processors.append(await DownsampleProcessor(width: width))
         } else if shouldUpscale {
             processors.append(UpscaleProcessor())
         }
 
-        let request = ImageRequest(
+        return ImageRequest(
             urlRequest: urlRequest,
             processors: processors,
             userInfo: [.processesKey: usePageProcessor]
         )
+    }
 
-        // Store current image request for reload functionality
-        self.currentImageRequest = request
-
+    private func loadImage(request: ImageRequest) async {
         let imageTask = ImagePipeline.shared.loadImage(
             with: request,
             progress: { [weak progressView] _, completed, total in
@@ -390,15 +399,13 @@ extension ReaderWebtoonPageNode {
         do {
             let response = try await imageTask.response
             guard !Task.isCancelled else { return }
-            image = response.image
-            if response.container.type == .gif, let data = response.container.data {
-                imageNode.animate(withGIFData: data)
-            }
-            if isNodeLoaded {
-                displayPage()
-            }
+            showLoadedImage(response.image, gifData: response.container.type == .gif ? response.container.data : nil)
         } catch {
             guard !Task.isCancelled else { return }
+            if let fallback = TranslateProcessor.fallbackRequest(after: error, request: request) {
+                await loadImage(request: fallback)
+                return
+            }
 
             switch error {
                 case .dataLoadingFailed, .dataIsEmpty:
@@ -413,13 +420,7 @@ extension ReaderWebtoonPageNode {
                             guard !Task.isCancelled else { return }
 
                             if let result {
-                                self.image = result.image
-                                if result.type == .gif, let data = result.data {
-                                    self.imageNode.animate(withGIFData: data)
-                                }
-                                if self.isNodeLoaded {
-                                    self.displayPage()
-                                }
+                                showLoadedImage(result.image, gifData: result.type == .gif ? result.data : nil)
                                 return
                             }
                         }
@@ -430,6 +431,16 @@ extension ReaderWebtoonPageNode {
 
             // TODO: handle failure
             await self.progressView.setProgress(value: 0, withAnimation: true)
+        }
+    }
+
+    private func showLoadedImage(_ image: UIImage, gifData: Data?) {
+        self.image = image
+        if let gifData {
+            imageNode.animate(withGIFData: gifData)
+        }
+        if isNodeLoaded {
+            displayPage()
         }
     }
 
@@ -459,7 +470,7 @@ extension ReaderWebtoonPageNode {
         let downsampleWidth = pageWidth
         let shouldDownsample = UserDefaults.standard.bool(forKey: "Reader.downsampleImages") && downsampleWidth > 0
 
-        let processingTask = Task.detached { () -> UIImage? in
+        let processingTask = Task.detached { () async -> (image: UIImage, cache: Bool)? in
             guard
                 let imageData = Data(base64Encoded: base64),
                 var image = UIImage(data: imageData)
@@ -471,6 +482,15 @@ extension ReaderWebtoonPageNode {
                 let processor = CropBordersProcessor()
                 if let processedImage = processor.process(image) {
                     image = processedImage
+                }
+            }
+            var cache = true
+            if UserDefaults.standard.bool(forKey: "Reader.translatePages") {
+                if let translated = try? await TranslateProcessor().translate(image) {
+                    image = translated
+                } else {
+                    // Failed output must not occupy the translating cache key.
+                    cache = false
                 }
             }
             if shouldDownsample {
@@ -485,15 +505,17 @@ extension ReaderWebtoonPageNode {
                 }
             }
 
-            return image
+            return (image, cache)
         }
         self.imageProcessingTask = processingTask
-        let image = await processingTask.value
+        let processed = await processingTask.value
         self.imageProcessingTask = nil
-        guard !Task.isCancelled, let image else { return }
+        guard !Task.isCancelled, let processed else { return }
 
-        ImagePipeline.shared.cache.storeCachedImage(ImageContainer(image: image), for: request)
-        self.image = image
+        if processed.cache {
+            ImagePipeline.shared.cache.storeCachedImage(ImageContainer(image: processed.image), for: request)
+        }
+        self.image = processed.image
         if isNodeLoaded {
             displayPage()
         }

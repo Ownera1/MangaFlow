@@ -531,6 +531,49 @@ extension Settings {
             ))
         ),
         .init(
+            title: NSLocalizedString("TRANSLATION"),
+            value: .group(.init(items: [
+                .init(
+                    key: "Reader.translatePages",
+                    title: NSLocalizedString("TRANSLATE_PAGES"),
+                    value: .toggle(.init())
+                ),
+                .init(
+                    key: "Translation.serverURL",
+                    title: NSLocalizedString("TRANSLATION_SERVER_URL"),
+                    notification: "Translation.serverURL",
+                    requires: "Reader.translatePages",
+                    value: .text(.init(
+                        placeholder: "https://example.com",
+                        autocapitalizationType: UITextAutocapitalizationType.none.rawValue,
+                        keyboardType: UIKeyboardType.URL.rawValue,
+                        autocorrectionDisabled: true
+                    ))
+                ),
+                .init(
+                    key: "Translation.targetLang",
+                    title: NSLocalizedString("TRANSLATION_TARGET_LANG"),
+                    notification: "Translation.targetLang",
+                    requires: "Reader.translatePages",
+                    value: .select(.init(
+                        values: ["CHS", "CHT", "ENG"],
+                        titles: [
+                            NSLocalizedString("TRANSLATION_LANG_CHS"),
+                            NSLocalizedString("TRANSLATION_LANG_CHT"),
+                            NSLocalizedString("TRANSLATION_LANG_ENG")
+                        ],
+                        defaultValue: "CHS"
+                    ))
+                ),
+                .init(
+                    key: "Translation.token",
+                    title: NSLocalizedString("TRANSLATION_TOKEN"),
+                    requires: "Reader.translatePages",
+                    value: .page(.init(items: []))
+                )
+            ]))
+        ),
+        .init(
             title: NSLocalizedString("PAGED"),
             value: .group(.init(items: [
                 .init(

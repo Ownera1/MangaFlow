@@ -335,6 +335,10 @@ class ReaderViewController: BaseObservingViewController {
         // reload pages when processors change
         addObserver(forName: "Reader.downsampleImages", using: reloadBlock)
         addObserver(forName: "Reader.upscaleImages", using: reloadBlock)
+        addObserver(forName: "Reader.translatePages", using: reloadBlock)
+        addObserver(forName: "Translation.targetLang", using: reloadBlock)
+        addObserver(forName: "Translation.serverURL", using: reloadBlock)
+        addObserver(forName: "Translation.token", using: reloadBlock)
         addObserver(forName: AppSettings.reader.upscaleQuality.key, using: reloadBlock)
         addObserver(forName: "Reader.cropBorders", using: reloadBlock)
         addObserver(forName: "Reader.liveText", using: reloadBlock)

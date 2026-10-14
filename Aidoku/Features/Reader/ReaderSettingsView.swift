@@ -144,6 +144,18 @@ struct ReaderSettingsView: View {
                         }
                     }
 
+                    Section {
+                        SettingView(
+                            setting: .init(
+                                key: "Reader.translatePages",
+                                title: NSLocalizedString("TRANSLATE_PAGES"),
+                                value: .toggle(.init())
+                            )
+                        )
+                    } header: {
+                        Text(NSLocalizedString("TRANSLATION"))
+                    }
+
                     if readingMode == .rtl || readingMode == .ltr || readingMode == .vertical || readingMode == nil {
                         pagedSection
                     }

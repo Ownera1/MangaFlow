@@ -552,6 +552,14 @@
 "UPSCALE_QUALITY" = "Upscaling Quality";
 "UPSCALE_QUALITY_FAST" = "Fast";
 "UPSCALE_QUALITY_BEST" = "Best Quality";
+"TRANSLATION" = "Translation";
+"TRANSLATE_PAGES" = "Translate Pages";
+"TRANSLATION_SERVER_URL" = "Server URL";
+"TRANSLATION_TARGET_LANG" = "Target Language";
+"TRANSLATION_LANG_CHS" = "Simplified Chinese";
+"TRANSLATION_LANG_CHT" = "Traditional Chinese";
+"TRANSLATION_LANG_ENG" = "English";
+"TRANSLATION_TOKEN" = "Token";
 "ENABLED_MODEL" = "Enabled Model";
 "AVAILABLE_MODELS" = "Available Models";
 "NO_AVAILABLE_MODELS" = "No Available Models";

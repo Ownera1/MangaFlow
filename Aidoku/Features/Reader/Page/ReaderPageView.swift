@@ -151,6 +151,9 @@ extension ReaderPageView {
                 if UserDefaults.standard.bool(forKey: "Reader.cropBorders") {
                     image = CropBordersProcessor().process(image) ?? image
                 }
+                if UserDefaults.standard.bool(forKey: "Reader.translatePages") {
+                    image = (try? await TranslateProcessor().translate(image)) ?? image
+                }
                 if UserDefaults.standard.bool(forKey: "Reader.downsampleImages") {
                     image = DownsampleProcessor(width: UIScreen.main.bounds.width).process(image) ?? image
                 } else if UserDefaults.standard.bool(forKey: "Reader.upscaleImages") {
@@ -203,6 +206,9 @@ extension ReaderPageView {
         }
         if UserDefaults.standard.bool(forKey: "Reader.cropBorders") {
             processors.append(CropBordersProcessor())
+        }
+        if UserDefaults.standard.bool(forKey: "Reader.translatePages") {
+            processors.append(TranslateProcessor())
         }
         if UserDefaults.standard.bool(forKey: "Reader.downsampleImages") {
             processors.append(DownsampleProcessor(width: UIScreen.main.bounds.width))
@@ -286,6 +292,9 @@ extension ReaderPageView {
             completion?(true)
             return true
         } catch {
+            if let fallback = TranslateProcessor.fallbackRequest(after: error, request: request) {
+                return await startImageTask(fallback)
+            }
             // we can still send to image processor even if the request failed
             if request.userInfo[.processesKey] as? Bool == true {
                 let processor = request.processors.first(where: { $0 is PageInterceptorProcessor }) as? PageInterceptorProcessor
@@ -335,7 +344,7 @@ extension ReaderPageView {
             return true
         }
 
-        let image: UIImage? = await Task.detached {
+        let processed: (image: UIImage, cache: Bool)? = await Task.detached {
             guard
                 let imageData = Data(base64Encoded: base64),
                 var image = UIImage(data: imageData)
@@ -347,6 +356,15 @@ extension ReaderPageView {
                 let processor = CropBordersProcessor()
                 if let processedImage = processor.process(image) {
                     image = processedImage
+                }
+            }
+            var cache = true
+            if UserDefaults.standard.bool(forKey: "Reader.translatePages") {
+                if let translated = try? await TranslateProcessor().translate(image) {
+                    image = translated
+                } else {
+                    // Failed output must not occupy the translating cache key.
+                    cache = false
                 }
             }
             if UserDefaults.standard.bool(forKey: "Reader.downsampleImages") {
@@ -361,12 +379,14 @@ extension ReaderPageView {
                 }
             }
 
-            return image
+            return (image, cache)
         }.value
-        guard let image else { return false }
+        guard let processed else { return false }
 
-        ImagePipeline.shared.cache.storeCachedImage(ImageContainer(image: image), for: request)
-        setPageImage(image)
+        if processed.cache {
+            ImagePipeline.shared.cache.storeCachedImage(ImageContainer(image: processed.image), for: request)
+        }
+        setPageImage(processed.image)
 
         return true
     }

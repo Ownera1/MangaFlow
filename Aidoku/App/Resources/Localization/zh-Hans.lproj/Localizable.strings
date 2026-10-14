@@ -512,6 +512,14 @@
 "NO_AVAILABLE_MODELS_TEXT" = "获取可用模型失败。请检查网络连接并确保您的应用运行最新版本。";
 "MODEL_INFO" = "模型信息";
 "UPSCALING" = "超分辨率";
+"TRANSLATION" = "翻译";
+"TRANSLATE_PAGES" = "翻译页面";
+"TRANSLATION_SERVER_URL" = "服务地址";
+"TRANSLATION_TARGET_LANG" = "目标语言";
+"TRANSLATION_LANG_CHS" = "简体中文";
+"TRANSLATION_LANG_CHT" = "繁体中文";
+"TRANSLATION_LANG_ENG" = "英语";
+"TRANSLATION_TOKEN" = "令牌";
 "RELOAD_FAILED_TEXT" = "图片加载失败。请重试。";
 "RELOAD_FAILED" = "重新加载失败";
 "NO_DOWNLOADS" = "无下载内容";
